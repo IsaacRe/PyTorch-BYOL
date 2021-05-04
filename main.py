@@ -66,7 +66,7 @@ def main():
     batch_size_train = 100
     batch_size_test = 200
     incr_train_loaders, incr_val_loaders = get_dataloader_incr(data_dir='../../data', base='CIFAR10', num_classes=10,
-                                                               img_size=96, classes_per_exposure=2, train=True,
+                                                               img_size=224, classes_per_exposure=2, train=True,
                                                                num_workers=num_workers, batch_size_train=batch_size_train,
                                                                batch_size_test=batch_size_test,
                                                                transform=MultiViewDataInjector([data_transform, data_transform]))
