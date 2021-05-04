@@ -1,7 +1,10 @@
 import os
 
+import numpy as np
 import torch
 import yaml
+from experiment_utils.dataset import get_dataloader_incr
+from torch.utils.data import DataLoader, SubsetRandomSampler
 from torchvision import datasets
 from data.multi_view_data_injector import MultiViewDataInjector
 from data.transforms import get_simclr_data_transforms
@@ -21,8 +24,8 @@ def main():
 
     data_transform = get_simclr_data_transforms(**config['data_transforms'])
 
-    train_dataset = datasets.STL10('/home/thalles/Downloads/', split='train+unlabeled', download=True,
-                                   transform=MultiViewDataInjector([data_transform, data_transform]))
+    #train_dataset = datasets.STL10('../../data', split='train+unlabeled', download=False,
+    #                               transform=MultiViewDataInjector([data_transform, data_transform]))
 
     # online network
     online_network = ResNet18(**config['network']).to(device)
@@ -43,7 +46,7 @@ def main():
             print("Pre-trained weights not found. Training from scratch.")
 
     # predictor network
-    predictor = MLPHead(in_channels=online_network.projetion.net[-1].out_features,
+    predictor = MLPHead(in_channels=online_network.projection.net[-1].out_features,
                         **config['network']['projection_head']).to(device)
 
     # target encoder
@@ -59,7 +62,24 @@ def main():
                           device=device,
                           **config['trainer'])
 
-    trainer.train(train_dataset)
+    num_workers = config['trainer']['num_workers']
+    batch_size_train = 100
+    batch_size_test = 200
+    incr_train_loaders, incr_val_loaders = get_dataloader_incr(data_dir='../../data', base='CIFAR10', num_classes=10,
+                                                               img_size=96, classes_per_exposure=2, train=True,
+                                                               num_workers=num_workers, batch_size_train=batch_size_train,
+                                                               batch_size_test=batch_size_test,
+                                                               transform=MultiViewDataInjector([data_transform, data_transform]))
+
+    # get train and val indices sampled
+    train_indices = np.concatenate([ldr.sampler.indices for ldr in incr_train_loaders])
+
+    train_class_dataloader = DataLoader(incr_train_loaders[0].dataset, sampler=SubsetRandomSampler(train_indices),
+                                        batch_size=batch_size_train, num_workers=num_workers)
+    #trainer.train(train_dataset)
+    trainer.train(incr_train_loaders, incr_val_loaders,
+                  n_class_epochs=1,
+                  train_class_dataloader=train_class_dataloader)
 
 
 if __name__ == '__main__':
