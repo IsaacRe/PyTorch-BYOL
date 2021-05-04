@@ -19,6 +19,9 @@ trainer:
   max_epochs: 40
   num_workers: 4
 
+incr:
+  n_class_epochs: 3
+
 optimizer:
   params:
     lr: 0.03
