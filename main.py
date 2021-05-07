@@ -20,10 +20,13 @@ torch.manual_seed(0)
 def main():
     parser = ArgumentParser()
     parser.add_argument('--incr', action='store_true', help='train representation incrementally')
+    parser.add_argument('--id', type=str, default='', dest='experiment_id',
+                        help='experiment id appended to saved files')
     args = parser.parse_args()
 
     config = yaml.load(open("./config/config.yaml", "r"), Loader=yaml.FullLoader)
-    n_class_epochs = config['incr']['n_class_epochs']
+    n_class_epochs = config['other']['n_class_epochs']
+    eval_step = config['other']['eval_step']
 
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Training with: {device}")
@@ -87,13 +90,16 @@ def main():
         #trainer.train(train_dataset)
         trainer.train_incr(incr_train_loaders, incr_val_loaders,
                            n_class_epochs=n_class_epochs,
-                           train_class_dataloader=train_class_dataloader)
+                           train_class_dataloader=train_class_dataloader,
+                           experiment_id=args.experiment_id,
+                           eval_step=eval_step)
     else:
         train_loader, val_loader = get_dataloader(data_dir='../../data', base='CIFAR10', num_classes=10,
                                                   img_size=224, train=True, num_workers=num_workers,
                                                   batch_size_train=batch_size_train, batch_size_test=batch_size_test,
                                                   transform=MultiViewDataInjector([data_transform, data_transform]))
-        trainer.train(train_loader, val_loader, n_class_epochs=n_class_epochs)
+        trainer.train(train_loader, val_loader, n_class_epochs=n_class_epochs, experiment_id=args.experiment_id,
+                      eval_step=eval_step)
 
 
 if __name__ == '__main__':

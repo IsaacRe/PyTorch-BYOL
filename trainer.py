@@ -46,7 +46,7 @@ class BYOLTrainer:
             param_k.data.copy_(param_q.data)  # initialize
             param_k.requires_grad = False  # not update by gradient
 
-    def train(self, train_loader, val_loader, n_class_epochs=1):
+    def train(self, train_loader, val_loader, n_class_epochs=1, experiment_id='', eval_step=1):
         # train_loader = DataLoader(train_dataset, batch_size=self.batch_size,
         #                          num_workers=self.num_workers, drop_last=False, shuffle=True)
 
@@ -94,53 +94,54 @@ class BYOLTrainer:
                 pbar.update(1)
             pbar.close()
 
-            total_loss = 0
-            total_batches = 0
-            with torch.no_grad():
-                for _, (batch_view_1, batch_view_2), _ in val_loader:
-                    total_loss += self.update(batch_view_1.to(self.device), batch_view_2.to(self.device)).item()
-                    total_batches += 1
+            if epoch_counter % eval_step == 0:
+                total_loss = 0
+                total_batches = 0
+                with torch.no_grad():
+                    for _, (batch_view_1, batch_view_2), _ in val_loader:
+                        total_loss += self.update(batch_view_1.to(self.device), batch_view_2.to(self.device)).item()
+                        total_batches += 1
 
-            val_losses += [total_loss / total_batches]
-            eval_iters += [niter]
+                val_losses += [total_loss / total_batches]
+                eval_iters += [niter]
 
-            np.savez('BYOL-loss.npz', train=np.array(train_losses), val=np.array(val_losses),
-                     eval_iters=np.array(eval_iters))
+                np.savez('BYOL-loss%s.npz' % experiment_id, train=np.array(train_losses), val=np.array(val_losses),
+                         eval_iters=np.array(eval_iters))
 
-            # train classification layer and evaluate accuracy
-            print('Training classification head for %d epochs...' % n_class_epochs, end='')
-            pbar = tqdm(total=n_class_epochs * len(train_loader))
-            losses = []
-            for class_epoch in range(n_class_epochs):
-                for _, (x, _), y in train_loader:
-                    x, y = x.to(self.device), y.to(self.device)
-                    with torch.no_grad():
-                        features = self.online_network.encoder(x)
-                    out = classification_head(features.flatten(start_dim=1))
-                    loss = xent(out, y)
-                    losses += [loss.item()]
-                    loss.backward()
-                    class_optim.step()
-                    class_optim.zero_grad()
+                # train classification layer and evaluate accuracy
+                print('Training classification head for %d epochs...' % n_class_epochs, end='')
+                pbar = tqdm(total=n_class_epochs * len(train_loader))
+                losses = []
+                for class_epoch in range(n_class_epochs):
+                    for _, (x, _), y in train_loader:
+                        x, y = x.to(self.device), y.to(self.device)
+                        with torch.no_grad():
+                            features = self.online_network.encoder(x)
+                        out = classification_head(features.flatten(start_dim=1))
+                        loss = xent(out, y)
+                        losses += [loss.item()]
+                        loss.backward()
+                        class_optim.step()
+                        class_optim.zero_grad()
 
-                    pbar.update(1)
-            pbar.close()
+                        pbar.update(1)
+                pbar.close()
 
-            print('done')
-            print('Evaluating validation accuracy...')
+                print('done')
+                print('Evaluating validation accuracy...')
 
-            with torch.no_grad():
-                correct = total = 0
-                for _, (x, _), y in val_loader:
-                    x, y = x.to(self.device), y.to(self.device)
-                    out = classification_head(self.online_network.encoder(x).flatten(start_dim=1))
-                    correct += (out.argmax(dim=1) == y).sum().item()
-                    total += len(y)
+                with torch.no_grad():
+                    correct = total = 0
+                    for _, (x, _), y in val_loader:
+                        x, y = x.to(self.device), y.to(self.device)
+                        out = classification_head(self.online_network.encoder(x).flatten(start_dim=1))
+                        correct += (out.argmax(dim=1) == y).sum().item()
+                        total += len(y)
 
-                acc += [correct / total * 100.]
+                    acc += [correct / total * 100.]
 
-            print('done')
-            np.savez('BYOL-acc.npz', val=np.array(acc), eval_iters=np.array(eval_iters))
+                print('done')
+                np.savez('BYOL-acc%s.npz' % experiment_id, val=np.array(acc), eval_iters=np.array(eval_iters))
 
             print("Completed {}/{} epochs. Acc={}, Loss={}".format(epoch_counter,
                                                                          self.max_epochs,
@@ -148,10 +149,10 @@ class BYOLTrainer:
                                                                          val_losses[-1]))
 
         # save checkpoints
-        self.save_model(os.path.join(model_checkpoints_folder, 'model.pth'))
+        self.save_model(os.path.join(model_checkpoints_folder, 'model%s.pth' % experiment_id))
 
     def train_incr(self, train_loaders, val_loaders, n_class_epochs=1, train_class_dataloader=None,
-                   eval_class_dataloader=None):
+                   experiment_id='', eval_step=1):
         #train_loader = DataLoader(train_dataset, batch_size=self.batch_size,
         #                          num_workers=self.num_workers, drop_last=False, shuffle=True)
 
@@ -212,7 +213,7 @@ class BYOLTrainer:
                 val_losses += [total_loss / total_batches]
                 eval_iters += [niter]
 
-                np.savez('BYOL-incr-loss.npz', same_task=np.array(task_losses), val=np.array(val_losses),
+                np.savez('BYOL-incr-loss%s.npz' % experiment_id, same_task=np.array(task_losses), val=np.array(val_losses),
                          eval_iters=np.array(eval_iters))
 
                 # train classification layer and evaluate accuracy
@@ -250,7 +251,7 @@ class BYOLTrainer:
                         task_accs[-1] += [correct / total * 100.]
 
                 print('done')
-                np.savez('BYOL-incr-acc.npz', val=np.array(task_accs), eval_iters=np.array(eval_iters))
+                np.savez('BYOL-incr-acc%s.npz' % experiment_id, val=np.array(task_accs), eval_iters=np.array(eval_iters))
 
                 print("Completed {}/{} epochs for task {}/{}".format(epoch_counter, self.max_epochs, task_id,
                                                                      len(train_loaders)))
